@@ -35,17 +35,34 @@ require(xlsx)
 ################################
 
 
-ROOT = "/Volumes/Storage/Finance/"
+ROOT = "/Volumes/Storage/Finance/PersonalFinanceExplorer"
 
 server <- shinyServer(function(input, output) {
   # Import Data and clean it
-  all_df <- read.xlsx(paste0(ROOT, "/All_Transactions.xlsx"), 1, header=TRUE)[-1, ]
+  all_df <- read.xlsx(paste0(ROOT, "/Example-All_Transactions.xlsx"), 1, header=TRUE)
   cols_to_choose <- c("Booking.date", "Notification.text", "Credit.in.CHF", "Debit.in.CHF", "Balance.in.CHF", "Category", "Sub.category", "Notes")
   all_df <- all_df[, cols_to_choose]
-
+  colnames(all_df) <- c("Date", "Description", "Credit", "Debit", "Balance", "Category", "Subcategory", "Notes")
+  all_df <- all_df %>%
+          mutate("Amount" = coalesce(pull(all_df, Credit), pull(all_df, Debit))) %>%
+            select(-c(Balance, Credit, Debit))
+  all_df <- filter(all_df, !is.na(Date))
+  all_df <- filter(all_df, !is.na(Description))
+  df <- all_df
+  # exculde money lent and returned
+  excess_reimbursement <- df %>%
+                            filter(Category == "Reimbursed") %>%
+                              summarise(Amount = sum(Amount))
+  excluded_df <- df %>%
+                  filter(Category == "Miscellaneous") %>%
+                    filter(grepl("str1|str2 friend", Subcategory))
+  excluded_df <- rbind(excluded_df, filter(excluded_df, Category == "Reimbursed"))
+  df <- df %>%
+          filter(!Category == "Miscellaneous") %>%
+            filter(!grepl("str1|str2 friend", Subcategory))
   # all_df_filt <- reactive({metadata_shiny})
   all_df_filt <- reactive({
-    all_df
+    df
   })
 
   output$data <-DT::renderDataTable(datatable(
