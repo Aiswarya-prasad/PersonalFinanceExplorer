@@ -2,6 +2,7 @@
 title: "Finances summary report"
 author: "Aiswarya Prasad"
 date: "`r Sys.Date()`"
+runtime: shiny
 output:
 #     Features matrix
 #     Responsive	Dynamic TOC	Dark mode	Thumbnails / Lightbox	Code folding	Tabsets	Bad joke
@@ -13,7 +14,7 @@ output:
 #     downcute	x	x	x	x	x	x
 #     lockdown							x
 # for more info see https://juba.github.io/rmdformats/
- rmdformats::readthedown:
+ rmdformats::robobook:
   #     fig_width : figures width, in inches
   #     fig_height : figures height, in inches
   #     fig_caption : toggle figure caption rendering
@@ -33,33 +34,10 @@ output:
     smooth_scroll: true
 ---
 
-```{css for_hover_hint, echo=FALSE}
-/* To make hoverable links. (does not have to be called hint) Usage: */
-/* [Message to show on hover]{.hint} */
-.hint {
-  visibility: hidden;
-}
-
-.hint::before {
-  visibility: visible;
-  content: "Hint";
-  color: blue;
-}
-
-.hint:hover {
-  visibility: visible;
-  font-weight: bold;
-}
-
-.hint:hover::before {
-  display: none;
-}
-```
-
-```{r setup, include=FALSE}
+```{r setup, include=F, echo=F}
 # set the root directory up correctly
-ROOT = "/Volumes/Storage/Finance/PersonalFinanceExplorer"
-knitr::opts_knit$set(root.dir = paste0(ROOT, "/Reports"))
+ROOT = "/Volumes/Storage/Finance/"
+knitr::opts_knit$set(root.dir = paste0(ROOT, "/Report"))
 # load libraries
 library(xlsx)
 library(ggplot2)
@@ -69,9 +47,12 @@ library(magrittr)
 library(lubridate)
 library(ggthemes)
 library(RColorBrewer)
+library(shiny)
+library(DT)
+library(leaflet)
 ```
 
-```{r function_and_defs, echo=FALSE}
+```{r function_and_defs, echo=F}
 #########################################
 # set colors and theme
 #########################################
@@ -114,8 +95,11 @@ library(RColorBrewer)
 #       maxcolors category colorblind
 # Blues         9      seq       TRUE
 # [1] 9
-make_theme <- function(max_colors=1, palettefill="Pastel1", palettecolor="Dark2",
-                        guide_nrow=2, guide_nrow_byrow=TRUE, leg_pos="top"){
+make_theme <- function(theme_name=theme_classic() ,max_colors=0, palettefill="Pastel1", palettecolor="Dark2",
+                        setFill=TRUE, setCol=TRUE,
+                        guide_nrow=2, guide_nrow_byrow=TRUE, leg_pos="top", leg_size=12,
+                        x_angle=0 ,x_vj=0, x_hj=0, x_size=12,
+                        y_angle=0 ,y_vj=0, y_hj=0, y_size=12){
   n_11 = c("BrBG", "PiYG", "PRGn", "PuOr", "RdBu", "RdGy", "RdYlBu", "RdYlGn", "Spectral")
   n_12 = c("Paired", "Set3")
   n_8 = c("Accent", "Dark2", "Pastel2", "Set2")
@@ -147,180 +131,452 @@ make_theme <- function(max_colors=1, palettefill="Pastel1", palettecolor="Dark2"
   }
   getFill = colorRampPalette(brewer.pal(n_f, palettefill))
   getColor = colorRampPalette(brewer.pal(n_c, palettecolor))
-  mytheme <- list(theme_economist(),
-                  scale_color_manual(values = getColor(max_colors)),
-                  scale_fill_manual(values = getFill(max_colors)),
-                  theme(axis.text.x = element_text(angle = 60, vjust = 1, hjust=1),
-                        axis.title.x = element_text(margin=margin(t=5)),
-                        axis.title.y = element_text(margin=margin(r=10)),
-                        legend.position=leg_pos
-                  ),
-                  guides(fill=guide_legend(nrow=guide_nrow, byrow=guide_nrow_byrow))
-                )
-  return(mytheme)
+  theme_params <- theme(axis.text.x = element_text(angle = x_angle,
+    vjust = x_vj, hjust=x_hj,
+    size = x_size),
+    axis.text.y = element_text(angle = y_angle,
+      vjust = y_vj, hjust=y_hj,
+      size = y_size),
+      # axis.title.x = element_text(margin=margin(t=5)),
+      # axis.title.y = element_text(margin=margin(r=10)),
+      legend.position=leg_pos,
+      legend.text = element_text(size=leg_size)
+    )
+  guide_params <- guides(fill = guide_legend(
+                                  nrow=guide_nrow,
+                                  byrow=guide_nrow_byrow
+                                ),
+                        col = guide_legend(
+                                  nrow=guide_nrow,
+                                  byrow=guide_nrow_byrow
+                                )
+                  )
+  my_theme <- list(
+                theme_name,
+                theme_params,
+                guide_params
+              )
+
+  if(setFill) {
+    if (n_f < max_colors) {
+      my_theme <- list(
+                    my_theme,
+                    scale_fill_manual(values = getFill(max_colors))
+                  )
+
+    } else {
+      my_theme <- list(
+                    my_theme,
+                    scale_fill_brewer(palette=palettefill)
+                  )
+    }
+  }
+  if(setCol) {
+    if (n_c < max_colors) {
+      my_theme <- list(
+                    my_theme,
+                    scale_color_manual(values = getColor(max_colors))
+                  )
+
+    } else {
+      my_theme <- list(
+                    my_theme,
+                    scale_color_brewer(palette=palettecolor)
+                  )
+    }
+  }
+  return(my_theme)
 }
 
 #########################################
 # set next function
 #########################################
-
 ```
 
-```{r read_data, echo=FALSE}
+```{css echo=F}
+/* To make hoverable links. (does not have to be called hint) Usage: */
+/* [Message to show on hover]{.hint} */
+.hint {
+  visibility: hidden;
+}
+
+.hint::before {
+  visibility: visible;
+  content: "Hint";
+  color: blue;
+}
+
+.hint:hover {
+  visibility: visible;
+  font-weight: bold;
+}
+
+.hint:hover::before {
+  display: none;
+}
+```
+
+```{r read_data, echo=F}
 # sheet1 is "All_Transactions"
-all_df <- read.xlsx(paste0(ROOT, "/Example-All_Transactions.xlsx"), 1, header=TRUE)
-cols_to_choose <- c("Booking.date", "Notification.text", "Credit.in.CHF", "Debit.in.CHF", "Balance.in.CHF", "Category", "Sub.category", "Notes")
+all_df <- read.xlsx(paste0(ROOT, "/All_Transactions.xlsx"), 1, header=TRUE)
+cols_to_choose <- c("Booking.date", "Notification.text", "Credit.in.CHF", "Debit.in.CHF", "Category", "Sub.category", "Notes")
 all_df <- all_df[, cols_to_choose]
-colnames(all_df) <- c("Date", "Description", "Credit", "Debit", "Balance", "Category", "Subcategory", "Notes")
+colnames(all_df) <- c("Date", "Description", "Credit", "Debit", "Category", "Subcategory", "Notes")
 all_df <- all_df %>%
-        mutate("Amount" = coalesce(pull(all_df, Credit), pull(all_df, Debit))) %>%
-          select(-c(Balance, Credit, Debit))
-all_df <- filter(all_df, !is.na(Date))
-all_df <- filter(all_df, !is.na(Description))
+            replace_na(list(Credit = 0, Debit = 0))
 df <- all_df
+df <- filter(df, !is.na(Date))
+df <- filter(df, !is.na(Description))
 # exculde money lent and returned
-excess_reimbursement <- df %>%
-                          filter(Category == "Reimbursed") %>%
-                            summarise(Amount = sum(Amount))
+reimbursed <- df %>%
+                  filter(Category == "Reimbursed") %>%
+                    select(Credit, Debit) %>%
+                      pivot_longer(cols = 1:2, names_to = "type", values_to = "Amount")
+excess_reimbursement <- sum(reimbursed$Amount)
 excluded_df <- df %>%
                 filter(Category == "Miscellaneous") %>%
-                  filter(grepl("str1|str2 friend", Subcategory))
+                  filter(grepl("Ebi|Helping Lakshya", Subcategory))
 excluded_df <- rbind(excluded_df, filter(excluded_df, Category == "Reimbursed"))
+excluded_df <- rbind(excluded_df, filter(excluded_df, Category == "CreditCardPayment"))
 df <- df %>%
         filter(!Category == "Miscellaneous") %>%
-          filter(!grepl("str1|str2 friend", Subcategory))
+        filter(!Category == "Reimbursed") %>%
+        filter(!Category == "CreditCardPayment") %>%
+          filter(!grepl("Ebi|Helping Lakshya", Subcategory))
+all_df <- all_df %>%
+        filter(!Category == "Miscellaneous") %>%
+        filter(!Category == "Reimbursed") %>%
+        filter(!Category == "CreditCardPayment") %>%
+          filter(!grepl("Ebi|Helping Lakshya", Subcategory))
 ```
 
-```{r prelim_analysis}
+```{r prelim_analysis, echo=F}
 salary_dates <- df %>%
                   filter(Category == "Salary") %>%
                     pull(Date)
 num_salaries <- length(salary_dates)
-df_expenses <- df %>%
-                filter(Amount < 0)
 min_date <- min(df$Date)
 max_date <- max(df$Date)
-
+date_order <- format(seq(floor_date(min_date, unit="month"), ceiling_date(max_date, unit="month"), by = "month"), "%h-%Y")
 # account balance from all_df
 
 ```
 
-Includes transactions from `r day(min_date)`, `r month(min_date, label=T, abbr=F)` `r year(min_date)`  to `r day(max_date)`, `r month(max_date, label=T, abbr=F)` `r year(max_date)`.
+# Transactions
 
-# Explore expenses
+This report includes transactions from **`r day(min_date)`, `r month(min_date, label=T, abbr=F)` `r year(min_date)`**  to **`r day(max_date)`, `r month(max_date, label=T, abbr=F)` `r year(max_date)`**.
 
-## Total credit and debit each month
+For a specific date range use:
 
-```{r credit_debit_plot, echo=FALSE}
-df_plot <- df
-df_plot$Date <- as.character(lapply(df_plot$Date,
-                                    function(x) paste0(
-                                      as.character(month(x, label=T, abbr=T)),
-                                      as.character(year(x))
-                                    )
-                                  )
-                              )
-df_plot$Date <- factor(df_plot$Date, levels=rev(unique(df_plot$Date)))
-df_plot <- df_plot %>%
-            group_by(Date) %>%
-              summarise(Amount = sum(Amount))
-p <- ggplot(data = df_plot, aes(x = Date, y = Amount)) +
-      geom_bar(stat="sum", fill=brewer.pal(8, "Blues")[6]) +
-        ylab("Amount in CHF") +
-          xlab("Month") +
-            make_theme(leg_pos="none")
+```{r set_date_range, echo=F}
+dateRangeInput("date_range", "Date range:", start = min_date,
+               end = max_date, min = min_date, max = max_date,
+               format = "yyyy-mm-dd", startview = "month", weekstart = 0,
+               language = "en", separator = " to ", width = "100%"
+)
+actionButton("Reset", "Reset", icon = NULL, width = NULL)
+observe({
+    input$Reset
+    updateDateRangeInput(session, "date_range", "Date range:",,
+      start = min_date,
+      end = max_date
+    )
+})
+df_reactive <- reactive({
+                df %>%
+                  filter(Date >= input$date_range[1] &
+                    Date <= input$date_range[2])
+})
+```
 
-p
+## Total income and expense each month
+
+```{r income_expense_plot, echo=F}
+radioButtons("ShowLabelsIncomeExpense", "Show values on plot:",
+             choices = c("Income" = "i", "Expense" = "e", "None" = "n"),
+             inline = T,
+             selected = "n"
+)
+
+renderPlot({
+  df_plot <- df_reactive()
+  df_plot <- df_plot %>%
+                mutate(Date = paste0(format(Date, "%h"), "-", format(Date, "%Y"))) %>%
+                  group_by(Date) %>%
+                    summarise(income = sum(Credit), expense = sum(-Debit))
+
+  p <- ggplot(data = pivot_longer(df_plot, 2:3, names_to = "Type", values_to = "Amount"),
+              aes(x = factor(Date, levels=date_order), y = Amount, fill = Type)) +
+            geom_bar(stat="identity",
+                     color="grey",
+                     position=position_dodge()) +
+              ylab("Amount in CHF") +
+                xlab("Month") +
+                  make_theme(theme_few(), leg_pos="right", setFill=T,
+                             x_angle=70, x_size=15, x_hj=1, x_vj=1,
+                             y_size=15
+                  )
+  if (input$ShowLabelsIncomeExpense == "i") {
+    p +
+      geom_text(aes(label = ifelse(Type == "income", paste0(round(Amount, 0), "\nCHF"), ""),
+                    y = Amount + 500,
+                    lineheight = 0.75
+              )
+      ) +
+      geom_text(aes(label = ifelse(Type == "income", paste0(round(Amount, 0), "\nCHF"), ""),
+                    y = Amount + 500,
+                    lineheight = 0.75
+              )
+      ) +
+      geom_text(aes(label = ifelse(Type == "income", paste0(round(Amount, 0), "\nCHF"), ""),
+                    y = Amount + 500,
+                    lineheight = 0.75
+              )
+      )
+  }
+  else if (input$ShowLabelsIncomeExpense == "e") {
+    p +
+      geom_text(aes(label = ifelse(Type == "expense", paste0(round(Amount, 0), "\nCHF"), ""),
+                    y = Amount + 800,
+                    lineheight = 0.75
+              )
+      ) +
+      geom_text(aes(label = ifelse(Type == "expense", paste0(round(Amount, 0), "\nCHF"), ""),
+                    y = Amount + 800,
+                    lineheight = 0.75
+              )
+      ) +
+      geom_text(aes(label = ifelse(Type == "expense", paste0(round(Amount, 0), "\nCHF"), ""),
+                    y = Amount + 800,
+                    lineheight = 0.75
+              )
+      )
+  }
+  else if (input$ShowLabelsIncomeExpense == "n") {
+    p
+  }
+}, height = 400, width = 800)
+
+actionButton("This_year1", "This year", icon = NULL, width = NULL)
+observe({
+    input$This_year1
+    updateDateRangeInput(session, "date_range", "Date range:",
+      start = format(Sys.Date(), "%Y-01-01"),
+      end = max_date
+    )
+})
+actionButton("Last_year1", "Last year", icon = NULL, width = NULL)
+observe({
+    input$Last_year1
+    updateDateRangeInput(session, "date_range", "Date range:",
+      start = paste0(as.numeric(format(Sys.Date(), "%Y"))-1, "-01-01"),
+      end = paste0(as.numeric(format(Sys.Date(), "%Y"))-1, "-12-31")
+    )
+})
+actionButton("Show_all1", "Show all", icon = NULL, width = NULL)
+observe({
+    input$Show_all1
+    updateDateRangeInput(session, "date_range", "Date range:",,
+      start = min_date,
+      end = max_date
+    )
+})
+```
+
+## Total savings each month
+
+```{r savings_plot, echo=F}
+radioButtons("ShowLabelsSavings", "Show values on plot:",
+             choices = c("Yes" = "y", "No" = "n"),
+             inline = T,
+             selected = "n"
+)
+
+renderPlot({
+  df_plot <- df_reactive()
+  df_plot <- df_plot %>%
+                mutate(Date = paste0(format(Date, "%h"), "-", format(Date, "%Y"))) %>%
+                  group_by(Date) %>%
+                    summarise(income = sum(Credit), expense = sum(-Debit)) %>%
+                      summarise(Date, Savings = income - expense)
+
+  p <- ggplot(data = df_plot,
+              aes(x = factor(Date, levels=date_order),
+                  y = Savings)) +
+            geom_bar(stat="identity",
+                     width = 0.8,
+                     position=position_dodge(width = 0.5),
+                     color="grey",
+                     fill = brewer.pal(8, "Pastel2")[2]) +
+              ylab("Amount in CHF") +
+                xlab("Month") +
+                  make_theme(theme_few(), leg_pos="right", setFill=F,
+                             x_angle=70, x_size=15, x_hj=1, x_vj=1,
+                             y_size=15
+                  )
+  if (input$ShowLabelsSavings == "y") {
+    p +
+      geom_text(aes(label=paste0(round(Savings, 0), "\nCHF"),
+                  y = Savings + 300 * sign(Savings),
+                  lineheight = 0.75
+              )
+      ) +
+        geom_text(aes(label=paste0(round(Savings, 0), "\nCHF"),
+                      y = Savings + 300 * sign(Savings),
+                      lineheight = 0.75
+                  )
+        ) +
+      geom_text(aes(label=paste0(round(Savings, 0), "\nCHF"),
+                  y = Savings + 300 * sign(Savings),
+                  lineheight = 0.75
+              )
+      )
+  }
+  else if (input$ShowLabelsSavings == "n") {
+    p
+  }
+}, height = 400, width = 800)
+
+actionButton("This_year2", "This year", icon = NULL, width = NULL)
+observe({
+    input$This_year2
+    updateDateRangeInput(session, "date_range", "Date range:",
+      start = format(Sys.Date(), "%Y-01-01"),
+      end = max_date
+    )
+})
+actionButton("Last_year2", "Last year", icon = NULL, width = NULL)
+observe({
+    input$Last_year2
+    updateDateRangeInput(session, "date_range", "Date range:",
+      start = paste0(as.numeric(format(Sys.Date(), "%Y"))-1, "-01-01"),
+      end = paste0(as.numeric(format(Sys.Date(), "%Y"))-1, "-12-31")
+    )
+})
+actionButton("Show_all2", "Show all", icon = NULL, width = NULL)
+observe({
+    input$Show_all2
+    updateDateRangeInput(session, "date_range", "Date range:",,
+      start = min_date,
+      end = max_date
+    )
+})
 ```
 
 ## Expenses by category
 
-```{r debit_category, echo=FALSE}
-df_plot <- df_expenses
-df_plot <- df_plot %>%
-            filter(!Category %in% c("Salary", "Reimbursed", "CreditCard"))
-df_plot$Date <- as.character(lapply(df_plot$Date,
-                                    function(x) paste0(
-                                      as.character(month(x, label=T, abbr=T)),
-                                      as.character(year(x))
-                                    )
-                                  )
-                              )
-df_plot$Date <- factor(df_plot$Date, levels=rev(unique(df_plot$Date)))
-p1 <- ggplot(data = df_plot, aes(x = Date, y = Amount, fill = Category)) +
-      geom_bar(stat="identity") +
-        ylab("Amount in CHF") +
-          xlab("Month") +
-            make_theme(length(unique(df_plot$Category)), palettefill = "Dark2",
-                        guide_nrow = round(length(unique(df_plot$Category))/2),
-                        guide_nrow_byrow = T, leg_pos = "bottom")
-
-p1
-df_plot <- df_expenses
-df_plot <- df_plot %>%
-            filter(!Category %in% c("Salary", "Reimbursed", "CreditCard", "Miscellaneous"))
-df_plot$Date <- as.character(lapply(df_plot$Date,
-                                    function(x) paste0(
-                                      as.character(month(x, label=T, abbr=T)),
-                                      as.character(year(x))
-                                    )
-                                  )
-                              )
-df_plot$Date <- factor(df_plot$Date, levels=rev(unique(df_plot$Date)))
-p2 <- ggplot(data = df_plot, aes(x = Date, y = Amount, fill = Category)) +
-      geom_bar(stat="identity") +
-        ylab("Amount in CHF") +
-          xlab("Month") +
-            make_theme(length(unique(df_plot$Category)), palettefill = "Accent",
-                        guide_nrow = round(length(unique(df_plot$Category))/2),
-                        guide_nrow_byrow = T, leg_pos = "bottom")
-
-p2
-df_plot <- df_expenses
-df_plot <- df_plot %>%
-            filter(!Category %in% c("Salary", "Reimbursed", "CreditCard", "Miscellaneous", "Rent"))
-df_plot$Date <- as.character(lapply(df_plot$Date,
-                                    function(x) paste0(
-                                      as.character(month(x, label=T, abbr=T)),
-                                      as.character(year(x))
-                                    )
-                                  )
-                              )
-df_plot$Date <- factor(df_plot$Date, levels=rev(unique(df_plot$Date)))
-p3 <- ggplot(data = df_plot, aes(x = Date, y = Amount, fill = Category)) +
-      geom_bar(stat="identity") +
-        ylab("Amount in CHF") +
-          xlab("Month") +
-            make_theme(length(unique(df_plot$Category)), palettefill = "Accent",
-                       guide_nrow = round(length(unique(df_plot$Category))/2),
-                       guide_nrow_byrow = T, leg_pos = "bottom")
-
-p3
+```{r debit_category, echo=F}
+# renderPlot({
+#   df_plot <- df_reactive()
+#   df_plot$Date <- as.character(lapply(df_plot$Date,
+#                                       function(x) paste0(
+#                                         as.character(month(x, label=T, abbr=T)),
+#                                         as.character(year(x))
+#                                       )
+#                                     )
+#                                 )
+#   df_plot$Date <- factor(df_plot$Date, levels=rev(unique(df_plot$Date)))
+#   df_plot <- df_plot %>%
+#               group_by(Date) %>%
+#                 summarise(Amount = sum(Amount))
+#   p <- ggplot(data = df_plot, aes(x = Date, y = Amount)) +
+#         geom_bar(stat="sum", fill=brewer.pal(11, "Spectral")[1]) +
+#           ylab("Amount in CHF") +
+#             xlab("Month") +
+#               make_theme(theme_few(), leg_pos="none", setFill=F,
+#                          x_angle=70, x_size=15, x_hj=1, x_vj=1,
+#                          y_size=15
+#               )
+#   p
+# }, height = 400, width = 800)
+# df_plot <- df_expenses
+# df_plot <- df_plot %>%
+#             filter(!Category %in% c("Salary", "Reimbursed", "CreditCard"))
+# df_plot$Date <- as.character(lapply(df_plot$Date,
+#                                     function(x) paste0(
+#                                       as.character(month(x, label=T, abbr=T)),
+#                                       as.character(year(x))
+#                                     )
+#                                   )
+#                               )
+# df_plot$Date <- factor(df_plot$Date, levels=rev(unique(df_plot$Date)))
+# p1 <- ggplot(data = df_plot, aes(x = Date, y = Amount, fill = Category)) +
+#       geom_bar(stat="identity") +
+#         ylab("Amount in CHF") +
+#           xlab("Month") +
+#             make_theme(max_colors=length(unique(df_plot$Category)), palettefill = "Dark2",
+#                         guide_nrow = round(length(unique(df_plot$Category))/2),
+#                         x_angle=70, x_size=10, x_hj=1, x_vj=1,
+#                         guide_nrow_byrow = T, leg_pos = "bottom")
+#
+# p1
+# df_plot <- df_expenses
+# df_plot <- df_plot %>%
+#             filter(!Category %in% c("Salary", "Reimbursed", "CreditCard", "Miscellaneous"))
+# df_plot$Date <- as.character(lapply(df_plot$Date,
+#                                     function(x) paste0(
+#                                       as.character(month(x, label=T, abbr=T)),
+#                                       as.character(year(x))
+#                                     )
+#                                   )
+#                               )
+# df_plot$Date <- factor(df_plot$Date, levels=rev(unique(df_plot$Date)))
+# p2 <- ggplot(data = df_plot, aes(x = Date, y = Amount, fill = Category)) +
+#       geom_bar(stat="identity") +
+#         ylab("Amount in CHF") +
+#           xlab("Month") +
+#             make_theme(max_colors = length(unique(df_plot$Category)), palettefill = "Accent",
+#                         guide_nrow = round(length(unique(df_plot$Category))/2),
+#                         x_angle=70, x_size=10, x_hj=1, x_vj=1,
+#                         guide_nrow_byrow = T, leg_pos = "bottom")
+#
+# p2
+# df_plot <- df_expenses
+# df_plot <- df_plot %>%
+#             filter(!Category %in% c("Salary", "Reimbursed", "CreditCard", "Miscellaneous", "Rent"))
+# df_plot$Date <- as.character(lapply(df_plot$Date,
+#                                     function(x) paste0(
+#                                       as.character(month(x, label=T, abbr=T)),
+#                                       as.character(year(x))
+#                                     )
+#                                   )
+#                               )
+# df_plot$Date <- factor(df_plot$Date, levels=rev(unique(df_plot$Date)))
+# p3 <- ggplot(data = df_plot, aes(x = Date, y = Amount, fill = Category)) +
+#       geom_bar(stat="identity") +
+#         ylab("Amount in CHF") +
+#           xlab("Month") +
+#             make_theme(max_colors = length(unique(df_plot$Category)), palettefill = "Accent",
+#                        guide_nrow = round(length(unique(df_plot$Category))/2),
+#                        x_angle=70, x_size=10, x_hj=1, x_vj=1,
+#                        guide_nrow_byrow = T, leg_pos = "bottom")
+#
+# p3
 ```
 
 ## Expenditure by categories
 
-```{r explore_categories}
-df_plot <- df_expenses
-df_plot <- df_plot %>%
-            group_by(Category) %>%
-              filter(Amount < 0) %>%
-                  summarise(Amount = sum(Amount)) %>%
-                    filter(!Category %in% c("Salary", "Reimbursed", "CreditCard"))
-df_plot$Category <- factor(df_plot$Category, levels=unique(df_plot$Category))
-df_plot$Amount <- lapply(df_plot$Amount, function(x) -x)
-p1 <- ggplot(data = df_plot, aes(x = Category, y = Amount)) +
-      geom_bar(stat="identity", fill=brewer.pal(8, "Blues")[6]) +
-        ylab("Total amount in CHF") +
-          xlab("Month") +
-            make_theme(leg_pos="none")
-
-p1
+```{r explore_categories, echo=F}
+# df_plot <- df_expenses
+# df_plot <- df_plot %>%
+#             group_by(Category) %>%
+#               filter(Amount < 0) %>%
+#                   summarise(Amount = sum(Amount)) %>%
+#                     filter(!Category %in% c("Salary", "Reimbursed", "CreditCard"))
+# df_plot$Category <- factor(df_plot$Category, levels=unique(df_plot$Category))
+# df_plot$Amount <- lapply(df_plot$Amount, function(x) -x)
+# p1 <- ggplot(data = df_plot, aes(x = Category, y = Amount)) +
+#       geom_bar(stat="identity", fill=brewer.pal(8, "Blues")[6]) +
+#         ylab("Total amount in CHF") +
+#           xlab("Month") +
+#             make_theme(x_angle=70, x_size=10, x_hj=1, x_vj=1,
+#                        leg_pos="none"
+#             )
+#
+# p1
 ```
 
-<!-- calculate monthly savings -->
-
-<!-- calculate monthly savings -->
+## Monthly savings
 
 
 
@@ -328,46 +584,92 @@ p1
 
 So far (as of `r today(tzone = "CET")`), `r num_salaries` salaries have been received. The first ever salary came in after the account was created so no transaction in the first month of being in Switzerland.
 
-```{r salaries_plot, echo=FALSE}
-df_plot <- df %>%
-            filter(Category == "Salary")
-df_plot <- df_plot %>%
-            group_by(Date) %>%
-              summarise(Amount = sum(Amount))
-df_plot$Date <- as.character(lapply(df_plot$Date,
-                                    function(x) paste0(
-                                      as.character(month(x, label=T, abbr=T)),
-                                      as.character(year(x))
-                                    )
-                                  )
-                              )
-df_plot$Date <- factor(df_plot$Date, levels=unique(df_plot$Date))
-p1 <- ggplot(data = df_plot, aes(x = Date, y = Amount)) +
-      geom_bar(stat="identity", fill=brewer.pal(8, "Blues")[6]) +
-        ylab("Amount in CHF") +
-          xlab("Month") +
-            make_theme(leg_pos="none")
-
-p1
-
-p2 <- ggplot(data = df_plot, aes(x = Date, y = Amount, group = 1)) +
-      geom_step(color=brewer.pal(8, "Blues")[6]) +
-        geom_point(color=brewer.pal(8, "Blues")[6]) +
-          ylab("Amount in CHF") +
-            xlab("Month") +
-              make_theme(leg_pos="none")
-
-p2
+```{r salaries_plot, echo=F}
+# df_plot <- df %>%
+#             filter(Category == "Salary")
+# df_plot <- df_plot %>%
+#             group_by(Date) %>%
+#               summarise(Amount = sum(Amount))
+# df_plot$Date <- as.character(lapply(df_plot$Date,
+#                                     function(x) paste0(
+#                                       as.character(month(x, label=T, abbr=T)),
+#                                       as.character(year(x))
+#                                     )
+#                                   )
+#                               )
+# df_plot$Date <- factor(df_plot$Date, levels=unique(df_plot$Date))
+# p1 <- ggplot(data = df_plot, aes(x = Date, y = Amount)) +
+#       geom_bar(stat="identity", fill=brewer.pal(8, "Blues")[6]) +
+#         ylab("Amount in CHF") +
+#           xlab("Month") +
+#           make_theme(x_angle=70, x_size=10, x_hj=1, x_vj=1,
+#                      leg_pos="none"
+#           )
+#
+# p1
+#
+# p2 <- ggplot(data = df_plot, aes(x = Date, y = Amount, group = 1)) +
+#       geom_step() +
+#         geom_point() +
+#           ylab("Amount in CHF") +
+#             xlab("Month") +
+#             make_theme(x_angle=70, x_size=10, x_hj=1, x_vj=1,
+#                        leg_pos="none"
+#             )
+#
+# p2
 ```
 
+# Transaction table
+
+```{r show_all_data, echo=F}
+renderDataTable({
+  df_reactive() %>%
+    filter(Date >= input$date_range[1] &
+      Date <= input$date_range[2]) %>%
+      select(!Notes) %>%
+        pivot_longer(cols = 3:4, names_to = "type", values_to = "Amount") %>%
+          select(!type) %>%
+            filter(Amount != 0)
+}, filter = "top", rownames = F)
+actionButton("This_year_df", "This year", icon = NULL, width = NULL)
+observe({
+    input$This_year_df
+    updateDateRangeInput(session, "date_range", "Date range:",
+      start = format(Sys.Date(), "%Y-01-01"),
+      end = max_date
+    )
+})
+actionButton("Last_year_df", "Last year", icon = NULL, width = NULL)
+observe({
+    input$Last_year_df
+    updateDateRangeInput(session, "date_range", "Date range:",
+      start = paste0(as.numeric(format(Sys.Date(), "%Y"))-1, "-01-01"),
+      end = paste0(as.numeric(format(Sys.Date(), "%Y"))-1, "-12-31")
+    )
+})
+actionButton("Show_all_df", "Show all", icon = NULL, width = NULL)
+observe({
+    input$Show_all_df
+    updateDateRangeInput(session, "date_range", "Date range:",,
+      start = min_date,
+      end = max_date
+    )
+})
+
+```
 
 
 # Disclaimers
 
-There is an excess of CHF`r as.numeric(excess_reimbursement)` from the reimbursements because part of the money that was reimbursed was paid from indian credit cards not associated with my current account.
+Credit card transactions are included in the source data so transaction towrds credit card payment are excluded from reports (to avoid duplication of credit card expenses).
+
+There is an excess of **CHF `r excess_reimbursement`** from the reimbursements because part of the money that was reimbursed was paid from indian credit cards not associated with my current account.
 
 This amount along with reimbursements and the following Miscellaneous transactions are excluded from reports.
 
-`r excluded_df`
+`r renderDataTable({excluded_df %>% select(!Notes) %>% pivot_longer(cols = 3:4, names_to = "type", values_to = "Amount") %>% select(!type) %>% filter(Amount != 0)}, filter = "top", rownames = F)`
 
-In the future, if particular Miscellaneous transactions are to be excluded, they need to be mentioned seperately. Any transactions flagged as reimbursed will be excluded (even if the reimbursement has not been credited yet!)
+In the future, if particular Miscellaneous transactions are to be excluded, they need to be mentioned seperately (i.e. the code excluding transactions should be modified to consider them). Any transactions flagged as reimbursed will be excluded (even if the reimbursement has not been credited yet!)
+
+# Extra features that would be nice to implement
