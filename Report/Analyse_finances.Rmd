@@ -36,7 +36,7 @@ output:
 
 ```{r setup, include=F, echo=F}
 # set the root directory up correctly
-ROOT = "/Volumes/Storage/Finance/"
+ROOT = getwd()
 knitr::opts_knit$set(root.dir = paste0(ROOT, "/Report"))
 # load libraries
 library(xlsx)
@@ -218,7 +218,7 @@ make_theme <- function(theme_name=theme_classic() ,max_colors=0, palettefill="Pa
 
 ```{r read_data, echo=F}
 # sheet1 is "All_Transactions"
-all_df <- read.xlsx(paste0(ROOT, "/All_Transactions.xlsx"), 1, header=TRUE)
+all_df <- read.xlsx(paste0(ROOT, "/Example-All_Transactions.xlsx"), 1, header=TRUE)
 cols_to_choose <- c("Booking.date", "Notification.text", "Credit.in.CHF", "Debit.in.CHF", "Category", "Sub.category", "Notes")
 all_df <- all_df[, cols_to_choose]
 colnames(all_df) <- c("Date", "Description", "Credit", "Debit", "Category", "Subcategory", "Notes")
