@@ -1,11 +1,21 @@
 # PersonalFinanceExplorer
 
+This project is a work in progress. I would be more than happy to have suggested improvements or even better, code contributions!
+
+![Preview (non-interactive) of the shiny report](Report/PREVIEW-MyFinances-summaryreport.pdf)
+
 # Setting up
 
 On the Rmd file, you should be able to set the path the absolute project directory. Edit the following line(s).
 
 ```{r}
 ROOT = "/path/to/PersonalFinanceExplorer"
+```
+
+Also, in order to not exclude the categories mentioned (or to exclude other categories, edit this line:
+
+```{r}
+`CategoriesToExclude <- c("Reimbursed", "Miscellaneous")`
 ```
 
 ## Installation
