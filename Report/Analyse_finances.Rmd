@@ -452,6 +452,53 @@ observe({
       end = max_date
     )
 })
+div(renderDataTable({
+    df_filtered <- df_reactive()
+    df_filtered <- df_filtered %>%
+                    filter(Date >= input$date_range[1] &
+                      Date <= input$date_range[2]) %>%
+                      select(!Notes)
+    df_savings <- df_filtered %>%
+                    mutate(Date = paste0(format(Date, "%h"), "-", format(Date, "%Y"))) %>%
+                      group_by(Date) %>%
+                        summarise(income = sum(Credit), expense = sum(-Debit)) %>%
+                          summarise(Date, Savings = income - expense)
+    avg_savings <- round(mean(df_savings$Savings), 2)
+    df_income_expense <- df_filtered %>%
+                          mutate(Date = paste0(format(Date, "%h"), "-", format(Date, "%Y"))) %>%
+                            group_by(Date) %>%
+                              summarise(income = sum(Credit), expense = sum(-Debit))
+    avg_income <- round(mean(df_income_expense$income), 2)
+    avg_expense <- round(mean(df_income_expense$expense), 2)
+
+    df_avg <- data.frame("Average" = c("Income", "Expense", "Savings"),
+                         "Amount" = c(avg_income, avg_expense, avg_savings))
+    df_avg
+}, rownames = F, colnames = c("Average", "Amount in CHF"), options = list(dom = 't')), style = "font-size:150%")
+actionButton("This_year_table", "This year", icon = NULL, width = NULL)
+observe({
+    input$This_year_table
+    updateDateRangeInput(session, "date_range", "Date range:",
+      start = format(Sys.Date(), "%Y-01-01"),
+      end = max_date
+    )
+})
+actionButton("Last_year_table", "Last year", icon = NULL, width = NULL)
+observe({
+    input$Last_year_table
+    updateDateRangeInput(session, "date_range", "Date range:",
+      start = last_year_start,
+      end = paste0(as.numeric(format(Sys.Date(), "%Y"))-1, "-12-31")
+    )
+})
+actionButton("Show_all_table", "Show all", icon = NULL, width = NULL)
+observe({
+    input$Show_all_table
+    updateDateRangeInput(session, "date_range", "Date range:",,
+      start = min_date,
+      end = max_date
+    )
+})
 ```
 
 <!-- ## Expenditure by categories -->
