@@ -2,7 +2,7 @@
 
 This project is a work in progress. I would be more than happy to have suggested improvements or even better, code contributions!
 
-![Preview (non-interactive) of the shiny report](Report/PREVIEW-MyFinances-summaryreport.pdf)
+[Preview (non-interactive) of the shiny report](Report/PREVIEW-MyFinances-summaryreport.pdf)
 
 # Setting up
 
