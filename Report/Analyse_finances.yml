@@ -18,3 +18,4 @@ dependencies:
   - r-leaflet
   - r-rmdformats
   - r-prettydoc
+  - r-plotly

@@ -259,24 +259,43 @@ This report includes transactions from **`r day(min_date)`, `r month(min_date, l
 
 For a specific date range use:
 
-```{r set_date_range, echo=F}
-dateRangeInput("date_range", "Date range:", start = min_date,
+```{r set_dateRange, echo=F}
+dateRangeInput("dateRange", "Date range:", start = min_date,
                end = max_date, min = min_date, max = max_date,
                format = "yyyy-mm-dd", startview = "month", weekstart = 0,
                language = "en", separator = " to ", width = "100%"
 )
 actionButton("Reset", "Reset", icon = NULL, width = NULL)
 observe({
-    input$Reset
-    updateDateRangeInput(session, "date_range", "Date range:",,
-      start = min_date,
-      end = max_date
-    )
+  input$Reset
+  updateDateRangeInput(session, "date_range", "Date range:",,
+  start = min_date,
+  end = max_date
+)
+})
+selectizeInput("selectizeCategory", "Select categories to include:",
+               choices = unique(df$Category),
+               selected = unique(df$Category),
+               multiple = TRUE)
+actionButton("showAllCategories1", "Show all", choices = NULL, width = NULL)
+observeEvent(
+    input$showAllCategories1, {
+    updateSelectizeInput(session, "selectizeCategory", "Select categories to include:",
+                   choices = unique(df$Category),
+                   selected = unique(df$Category))
 })
 df_reactive <- reactive({
                 df %>%
-                  filter(Date >= input$date_range[1] &
-                    Date <= input$date_range[2])
+                filter(Date >= input$dateRange[1] &
+                  Date <= input$dateRange[2]) %>%
+                  filter(Category %in% input$selectizeCategory)
+})
+observeEvent(
+  input$dateRange, {
+    selectizeInput("selectizeCategory", "Select categories to include:",
+                   choices = unique(df$Category),
+                   selected = unique(df$Category),
+                   multiple = TRUE)
 })
 ```
 
@@ -388,8 +407,8 @@ renderPlot({
   df_plot <- df_plot %>%
                 mutate(Date = paste0(format(Date, "%h"), "-", format(Date, "%Y"))) %>%
                   group_by(Date) %>%
-                    summarise(income = sum(Credit), expense = sum(-Debit)) %>%
-                      summarise(Date, Savings = income - expense)
+                    summarise(income = sum(Credit), expense = sum(-Debit), .groups = "keep") %>%
+                      summarise(Date, Savings = income - expense, .groups = "keep")
 
   p <- ggplot(data = df_plot,
               aes(x = factor(Date, levels=date_order),
@@ -431,7 +450,7 @@ renderPlot({
 actionButton("This_year2", "This year", icon = NULL, width = NULL)
 observe({
     input$This_year2
-    updateDateRangeInput(session, "date_range", "Date range:",
+    updateDateRangeInput(session, "dateRange", "Date range:",
       start = format(Sys.Date(), "%Y-01-01"),
       end = max_date
     )
@@ -439,7 +458,7 @@ observe({
 actionButton("Last_year2", "Last year", icon = NULL, width = NULL)
 observe({
     input$Last_year2
-    updateDateRangeInput(session, "date_range", "Date range:",
+    updateDateRangeInput(session, "dateRange", "Date range:",
       start = last_year_start,
       end = paste0(as.numeric(format(Sys.Date(), "%Y"))-1, "-12-31")
     )
@@ -447,27 +466,28 @@ observe({
 actionButton("Show_all2", "Show all", icon = NULL, width = NULL)
 observe({
     input$Show_all2
-    updateDateRangeInput(session, "date_range", "Date range:",,
+    updateDateRangeInput(session, "dateRange", "Date range:",,
       start = min_date,
       end = max_date
     )
 })
+
 div(renderDataTable({
     df_filtered <- df_reactive()
     df_filtered <- df_filtered %>%
-                    filter(Date >= input$date_range[1] &
-                      Date <= input$date_range[2]) %>%
+                    filter(Date >= input$dateRange[1] &
+                      Date <= input$dateRange[2]) %>%
                       select(!Notes)
     df_savings <- df_filtered %>%
                     mutate(Date = paste0(format(Date, "%h"), "-", format(Date, "%Y"))) %>%
                       group_by(Date) %>%
-                        summarise(income = sum(Credit), expense = sum(-Debit)) %>%
-                          summarise(Date, Savings = income - expense)
+                        summarise(income = sum(Credit), expense = sum(-Debit), .groups = "keep") %>%
+                          summarise(Date, Savings = income - expense, .groups = "keep")
     avg_savings <- round(mean(df_savings$Savings), 2)
     df_income_expense <- df_filtered %>%
                           mutate(Date = paste0(format(Date, "%h"), "-", format(Date, "%Y"))) %>%
                             group_by(Date) %>%
-                              summarise(income = sum(Credit), expense = sum(-Debit))
+                              summarise(income = sum(Credit), expense = sum(-Debit), .groups = "keep")
     avg_income <- round(mean(df_income_expense$income), 2)
     avg_expense <- round(mean(df_income_expense$expense), 2)
 
@@ -478,7 +498,7 @@ div(renderDataTable({
 actionButton("This_year_table", "This year", icon = NULL, width = NULL)
 observe({
     input$This_year_table
-    updateDateRangeInput(session, "date_range", "Date range:",
+    updateDateRangeInput(session, "dateRange", "Date range:",
       start = format(Sys.Date(), "%Y-01-01"),
       end = max_date
     )
@@ -486,7 +506,7 @@ observe({
 actionButton("Last_year_table", "Last year", icon = NULL, width = NULL)
 observe({
     input$Last_year_table
-    updateDateRangeInput(session, "date_range", "Date range:",
+    updateDateRangeInput(session, "dateRange", "Date range:",
       start = last_year_start,
       end = paste0(as.numeric(format(Sys.Date(), "%Y"))-1, "-12-31")
     )
@@ -494,14 +514,175 @@ observe({
 actionButton("Show_all_table", "Show all", icon = NULL, width = NULL)
 observe({
     input$Show_all_table
-    updateDateRangeInput(session, "date_range", "Date range:",,
+    updateDateRangeInput(session, "dateRange", "Date range:",,
       start = min_date,
       end = max_date
     )
 })
 ```
 
-<!-- ## Expenditure by categories -->
+## Monthly income and expenses by category
+
+```{r by_category, echo=F}
+checkboxGroupInput("selectBoxCategories", "Select categories to include:",
+                   choices = unique(df$Category), inline = T,
+                   selected = unique(df$Category))
+observeEvent(
+  input$dateRange, {
+    checkboxGroupInput("selectBoxCategories", "Select categories to include:",
+                       choices = unique(df_reactive()$Category), inline = T,
+                       selected = unique(df_reactive()$Category))
+})
+renderPlot({
+  df_plot <- df_reactive() %>%
+              filter(Category %in% input$selectBoxCategories)
+  df_plot <- df_plot %>%
+              select(Date, Credit, Debit, Category) %>%
+                mutate(Date = paste0(format(Date, "%h"), "-", format(Date, "%Y"))) %>%
+                  group_by(Date, Category) %>%
+                      summarise(Net = sum(Credit+Debit), .groups = "keep")
+  p <- ggplot(data = df_plot, aes(x = factor(Date, levels=date_order), y = Net, fill = Category)) +
+        geom_bar(stat="identity",
+                 color = "grey") +
+          ylab("Amount in CHF") +
+            xlab("Month") +
+              make_theme(theme_few(),
+                         x_angle=70, x_size=15, x_hj=1, x_vj=1,
+                         y_size=15, leg_pos = "top",
+                         max_colors = length(unique(df_plot$Category))
+              )
+  p
+}, height = 400, width = 800)
+
+actionButton("ResetCategories", "Show all categories", icon = NULL, width = NULL)
+observeEvent(
+  input$ResetCategories, {
+    updateCheckboxGroupInput(session, "selectBoxCategories", "Select categories to include:",
+                       unique(df$Category), inline = T,
+                       selected = unique(df$Category))
+})
+```
+
+## Monthly Expenses by category
+
+```{r by_category_E, echo=F}
+categories <- unique(df$Category)
+categories <- categories[!categories %in% c("Salary")]
+checkboxGroupInput("selectBoxCategoriesE", "Select categories to include:",
+                   choices = categories, inline = T,
+                   selected = categories)
+observeEvent(
+  input$dateRange, {
+    categories <- unique(df_reactive()$Category)
+    categories <- categories[!categories %in% c("Salary")]
+    checkboxGroupInput("selectBoxCategoriesE", "Select categories to include:",
+                       choices = categories, inline = T,
+                       selected = categories)
+})
+renderPlot({
+  df_plot <- df_reactive() %>%
+              filter(Category %in% input$selectBoxCategoriesE)
+  df_plot <- df_plot %>%
+              select(Date, Debit, Credit, Category) %>%
+                filter(Category != "Salary") %>%
+                  mutate(Date = paste0(format(Date, "%h"), "-", format(Date, "%Y"))) %>%
+                    group_by(Date, Category) %>%
+                        summarise(Net = -sum(Debit+Credit), .groups = "keep")
+  p <- ggplot(data = df_plot, aes(x = factor(Date, levels=date_order), y = Net, fill = Category)) +
+        geom_bar(stat="identity", color = "grey") +
+          ylab("Amount in CHF") +
+            xlab("Month") +
+              make_theme(theme_few(),
+                         x_angle=70, x_size=15, x_hj=1, x_vj=1,
+                         y_size=15, leg_pos = "top",
+                         max_colors = length(unique(df_plot$Category))
+              )
+  p
+}, height = 400, width = 800)
+
+actionButton("ResetCategoriesE", "Show all categories", icon = NULL, width = NULL)
+observeEvent(
+  input$ResetCategories, {
+    updateCheckboxGroupInput(session, "selectBoxCategoriesE", "Select categories to include:",
+                       unique(df$Category), inline = T,
+                       selected = unique(df$Category))
+})
+```
+
+### Subcategory summary
+
+```{r subcategory_summary, echo = F}
+selectInput(
+  "selectMonth",
+  "Select month:",
+  unique(mutate(df, Date = paste0(format(Date, "%h"), "-", format(Date, "%Y")))$Date),
+  selected = NULL,
+  multiple = FALSE
+)
+observeEvent(
+  input$dateRange, {
+    updateSelectInput(session, "selectMonth",
+    "Select month:",
+    unique(mutate(df_reactive(), Date = paste0(format(Date, "%h"), "-", format(Date, "%Y")))$Date),
+    selected = NULL
+    )
+})
+categories <- unique(df$Category)
+categories <- categories[!categories %in% c("Salary")]
+selectInput(
+  "selectCategoryTable",
+  "Select categories to show in table:",
+  unique(df$Category),
+  selected = categories,
+  multiple = T
+)
+actionButton("Include_all_cat", "Include all", icon = NULL, width = NULL)
+observe({
+    input$Include_all_cat
+    updateSelectInput(
+      session,
+      "selectCategoryTable",
+      "Select categories to show in table:",
+      choices = categories,
+      selected = categories
+    )
+})
+renderText({
+  df_filtered <- df_reactive() %>%
+                  filter(Date >= input$dateRange[1] &
+                      Date <= input$dateRange[2]) %>%
+                        filter(Category %in% input$selectBoxCategories)
+  df_filtered <- df_filtered %>%
+                  select(!c(Notes, Description)) %>%
+                    filter(Category != "Salary") %>%
+                      mutate(Date = paste0(format(Date, "%h"), "-", format(Date, "%Y"))) %>%
+                          filter(!is.na(Subcategory)) %>%
+                            group_by(Date, Category, Debit) %>%
+                                filter(Date %in% input$selectMonth) %>%
+                                  filter(Category %in% input$selectCategoryTable)
+  sum_categories <- sum(df_filtered$Debit) + sum(df_filtered$Credit)
+  paste("Total expenses on selected categories:", sum_categories)
+})
+renderDataTable({
+    df_filtered <- df_reactive() %>%
+                    filter(Date >= input$dateRange[1] &
+                        Date <= input$dateRange[2]) %>%
+                          filter(Category %in% input$selectBoxCategories)
+    df_filtered <- df_filtered %>%
+                    select(!c(Notes, Description, Credit)) %>%
+                      filter(Category != "Salary") %>%
+                        mutate(Date = paste0(format(Date, "%h"), "-", format(Date, "%Y"))) %>%
+                            filter(!is.na(Subcategory)) %>%
+                              group_by(Date, Category, Debit) %>%
+                                  filter(Date %in% input$selectMonth) %>%
+                                    filter(Category %in% input$selectCategoryTable)
+    df_filtered$Date <- factor(df_filtered$Date, levels = date_order)
+    df_filtered
+}, rownames = F)
+```
+
+
+<!-- ## Expenses by category -->
 
 
 # Transaction table
@@ -509,8 +690,8 @@ observe({
 ```{r show_all_data, echo=F}
 renderDataTable({
   df_reactive() %>%
-    filter(Date >= input$date_range[1] &
-      Date <= input$date_range[2]) %>%
+    filter(Date >= input$dateRange[1] &
+      Date <= input$dateRange[2]) %>%
       select(!Notes) %>%
         pivot_longer(cols = 3:4, names_to = "type", values_to = "Amount") %>%
           select(!type) %>%
@@ -519,7 +700,7 @@ renderDataTable({
 actionButton("This_year_df", "This year", icon = NULL, width = NULL)
 observe({
     input$This_year_df
-    updateDateRangeInput(session, "date_range", "Date range:",
+    updateDateRangeInput(session, "dateRange", "Date range:",
       start = format(Sys.Date(), "%Y-01-01"),
       end = max_date
     )
@@ -527,7 +708,7 @@ observe({
 actionButton("Last_year_df", "Last year", icon = NULL, width = NULL)
 observe({
     input$Last_year_df
-    updateDateRangeInput(session, "date_range", "Date range:",
+    updateDateRangeInput(session, "dateRange", "Date range:",
       start = last_year_start,
       end = paste0(as.numeric(format(Sys.Date(), "%Y"))-1, "-12-31")
     )
@@ -535,7 +716,7 @@ observe({
 actionButton("Show_all_df", "Show all", icon = NULL, width = NULL)
 observe({
     input$Show_all_df
-    updateDateRangeInput(session, "date_range", "Date range:",,
+    updateDateRangeInput(session, "dateRange", "Date range:",,
       start = min_date,
       end = max_date
     )
@@ -546,6 +727,11 @@ observe({
 
 # Disclaimers
 
+## Non-trivial notes for user interface
+
+(For selecting categories click on the category from the drop-down list. To remove a category from the list, use the cursor to select and highlight or text cursor and backspace or delete)
+
+## Notes on data included
 
 The transactions are excluded from reports.
 
@@ -557,8 +743,9 @@ In the future, if particular Miscellaneous transactions are to be excluded, they
 
 # Extra features that would be nice to implement
 
-* For now, more plots!
+* Implement relative expense per category plots!
 
-* Interactive plots?
+* Interactive plots? Eg. Hover to show amount!
+  * Implement **Plotly** !!!
 
-* Projected expenses based on a monthly expense that might be made
+* Show projected expenses based on a monthly expense that might be made
